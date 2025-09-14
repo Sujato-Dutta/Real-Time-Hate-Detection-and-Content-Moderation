@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment files
+.env
+venv/
+.envrc
+
+# Jupyter / Colab files
+.ipynb_checkpoints/
+
+# MLflow
+mlruns/
+mlflow.db
+
+# Logs
+logs/
+*.log
+
+# OS / IDE specific
+.DS_Store
+.idea/
+.vscode/
+*.swp

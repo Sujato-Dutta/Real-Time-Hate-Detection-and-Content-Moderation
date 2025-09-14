@@ -1,0 +1,14 @@
+numpy
+pandas
+matplotlib
+seaborn
+kaggle
+scikit-learn
+mlflow
+supabase
+ipykernel
+streamlit
+fastapi
+uvicorn
+setuptools
+pytest
