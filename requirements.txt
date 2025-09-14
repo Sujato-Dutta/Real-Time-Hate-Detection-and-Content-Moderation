@@ -3,6 +3,7 @@ pandas
 matplotlib
 seaborn
 kaggle
+kagglehub
 scikit-learn
 mlflow
 supabase
@@ -12,3 +13,5 @@ fastapi
 uvicorn
 setuptools
 pytest
+python-dotenv
+datasets
