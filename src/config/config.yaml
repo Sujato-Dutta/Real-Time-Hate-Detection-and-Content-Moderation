@@ -1,0 +1,5 @@
+supabase:
+  url: "https://hqtospmfdvddjhsiwtck.supabase.co"    
+  key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxdG9zcG1mZHZkZGpoc2l3dGNrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Nzg2NTU2OSwiZXhwIjoyMDczNDQxNTY5fQ.RH4WvGkbs-VjITIY_7ar8V0FefAaI7ZspkXelSidW5A"             
+  table_name: "Hate Speech Table"
+  schema: "public"

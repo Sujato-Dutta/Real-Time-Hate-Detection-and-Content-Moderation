@@ -1,0 +1,27 @@
+import sys
+from src.data_ingestion import ingest_from_supabase
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+def main() -> None:
+    try:
+        logger.info("Starting data ingestion...")
+        df = ingest_from_supabase()
+
+        rows = df.shape[0] if not df.empty else 0
+        cols = df.shape[1] if not df.empty else 0
+        logger.info("Ingestion complete. Retrieved %d rows and %d columns", rows, cols)
+
+        if rows:
+            logger.info("Sample rows:\n%s", df.head(5).to_string(index=False))
+        else:
+            logger.warning("No data returned from the source.")
+
+    except Exception as e:
+        logger.error("Data ingestion failed: %s", str(e), exc_info=True)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
