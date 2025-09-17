@@ -5,7 +5,7 @@ seaborn
 kaggle
 kagglehub
 scikit-learn
-mlflow
+mlflow<3 # for compatibility with dagshub current version. Can be upgraded later
 supabase
 ipykernel
 streamlit
@@ -15,3 +15,6 @@ setuptools
 pytest
 python-dotenv
 datasets
+dagshub
+dvc
+dvc-s3
