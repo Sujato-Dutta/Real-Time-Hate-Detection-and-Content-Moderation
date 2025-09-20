@@ -1,0 +1,40 @@
+# VCS and CI
+.git
+.github
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dll
+.pytest_cache/
+.mypy_cache/
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+
+# DVC local cache (can be huge)
+.dvc/cache/
+
+# Notebooks and raw/processed data (not needed to run Streamlit)
+notebooks/
+data/
+
+# Env files
+.env
+.env.*

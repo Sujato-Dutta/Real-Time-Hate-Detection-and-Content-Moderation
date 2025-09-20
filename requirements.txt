@@ -9,8 +9,6 @@ mlflow<3 # for compatibility with dagshub current version. Can be upgraded later
 supabase
 ipykernel
 streamlit
-fastapi
-uvicorn
 setuptools
 pytest
 python-dotenv
