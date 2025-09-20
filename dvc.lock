@@ -1,0 +1,88 @@
+schema: '2.0'
+stages:
+  data_preprocessing:
+    cmd: python run_data_preprocessing.py
+    deps:
+    - path: run_data_preprocessing.py
+      hash: md5
+      md5: d97fe0c375b341a7de7b2aca5c052e50
+      size: 2105
+    - path: src/config/config.yaml
+      hash: md5
+      md5: 705ee5d289626a544691a66c48592ce1
+      size: 362
+    - path: src/data_ingestion.py
+      hash: md5
+      md5: 33bfd96ea37ac60e0548e462561b0eac
+      size: 3932
+    - path: src/data_preprocessing.py
+      hash: md5
+      md5: 8130816d4c5a6194a39ff20efd50935f
+      size: 11652
+  train:
+    cmd: python run_model_train.py
+    deps:
+    - path: run_model_train.py
+      hash: md5
+      md5: 6d59e59bdff4977eb1f697de8b6aa764
+      size: 112
+    - path: src/config/config.yaml
+      hash: md5
+      md5: 705ee5d289626a544691a66c48592ce1
+      size: 362
+    - path: src/data_preprocessing.py
+      hash: md5
+      md5: 8130816d4c5a6194a39ff20efd50935f
+      size: 11652
+    - path: src/model_train.py
+      hash: md5
+      md5: 392d1aa76673874d9a1952a7b34f90ec
+      size: 8623
+    outs:
+    - path: artifacts/data_processor_meta.joblib
+      hash: md5
+      md5: 63cc3dba23d16c0fb9de9902b3084a46
+      size: 73
+    - path: artifacts/label_encoder.joblib
+      hash: md5
+      md5: 12923f0f9d133c8ecf02beb10bc8c36f
+      size: 543
+    - path: artifacts/model.joblib
+      hash: md5
+      md5: 1f4ececf78740956a6c141fdc70b470b
+      size: 717832
+    - path: artifacts/vectorizer.joblib
+      hash: md5
+      md5: a45c8e21ae0a6a0825b2339cfb6a9eaf
+      size: 1144843
+  predict:
+    cmd: set ENABLE_AUTOMATIC_RETRAIN=0 && python run_model_predict.py
+    deps:
+    - path: artifacts/data_processor_meta.joblib
+      hash: md5
+      md5: 63cc3dba23d16c0fb9de9902b3084a46
+      size: 73
+    - path: artifacts/label_encoder.joblib
+      hash: md5
+      md5: 12923f0f9d133c8ecf02beb10bc8c36f
+      size: 543
+    - path: artifacts/model.joblib
+      hash: md5
+      md5: 1f4ececf78740956a6c141fdc70b470b
+      size: 717832
+    - path: artifacts/vectorizer.joblib
+      hash: md5
+      md5: a45c8e21ae0a6a0825b2339cfb6a9eaf
+      size: 1144843
+    - path: run_model_predict.py
+      hash: md5
+      md5: 09dc13450151719ef14941803bdea6cf
+      size: 114
+    - path: src/config/config.yaml
+      hash: md5
+      md5: 705ee5d289626a544691a66c48592ce1
+      size: 362
+    - path: src/model_predict.py
+      hash: md5
+      md5: db937535f3e8371dcee2d0c9ebb99423
+      size: 9374

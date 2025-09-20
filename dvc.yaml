@@ -1,0 +1,33 @@
+stages:
+  data_preprocessing:
+    cmd: python run_data_preprocessing.py
+    deps:
+      - run_data_preprocessing.py
+      - src/data_preprocessing.py
+      - src/data_ingestion.py
+      - src/config/config.yaml
+
+  train:
+    cmd: python run_model_train.py
+    deps:
+      - run_model_train.py
+      - src/model_train.py
+      - src/data_preprocessing.py
+      - src/config/config.yaml
+    outs:
+      - artifacts/model.joblib
+      - artifacts/vectorizer.joblib
+      - artifacts/label_encoder.joblib
+      - artifacts/data_processor_meta.joblib
+
+  predict:
+    # Keep the pipeline reproducible: disable auto-retrain when running via DVC
+    cmd: set ENABLE_AUTOMATIC_RETRAIN=0 && python run_model_predict.py
+    deps:
+      - run_model_predict.py
+      - src/model_predict.py
+      - artifacts/model.joblib
+      - artifacts/vectorizer.joblib
+      - artifacts/label_encoder.joblib
+      - artifacts/data_processor_meta.joblib
+      - src/config/config.yaml

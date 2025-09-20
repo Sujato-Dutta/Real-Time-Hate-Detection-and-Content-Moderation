@@ -1,0 +1,5 @@
+[core]
+    remote = origin
+['remote "origin"']
+    url = s3://dvc
+    endpointurl = https://dagshub.com/Sujato-Dutta/Real-Time-Hate-Detection-and-Content-Moderation.s3

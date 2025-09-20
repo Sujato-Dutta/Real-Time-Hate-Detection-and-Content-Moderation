@@ -1,0 +1,4 @@
+/model.joblib
+/vectorizer.joblib
+/label_encoder.joblib
+/data_processor_meta.joblib
