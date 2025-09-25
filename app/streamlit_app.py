@@ -23,8 +23,17 @@ MODEL_PATH = os.path.join(ARTIFACTS_DIR, "model.joblib")
 @st.cache_resource(show_spinner=False)
 def load_artifacts():
     import subprocess
+    import os
 
     def ensure_artifacts():
+        # Map DAGSHUB_TOKEN to AWS_* if Space provided only DAGSHUB_TOKEN
+        if not os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("DAGSHUB_TOKEN"):
+            os.environ["AWS_ACCESS_KEY_ID"] = os.environ["DAGSHUB_TOKEN"]
+        if not os.environ.get("AWS_SECRET_ACCESS_KEY") and os.environ.get("DAGSHUB_TOKEN"):
+            os.environ["AWS_SECRET_ACCESS_KEY"] = os.environ["DAGSHUB_TOKEN"]
+        # Optional default region for S3 clients (safe default)
+        os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+
         required = [
             "model.joblib",
             "vectorizer.joblib",
@@ -36,24 +45,30 @@ def load_artifacts():
             if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
         ]
         if missing:
-            # Try to pull once; relies on Space env vars (AWS_ACCESS_KEY_ID/SECRET)
             try:
-                subprocess.run(["dvc", "pull"], check=True)
-            except Exception:
-                pass  # ignore and recheck
+                # Try to pull once; relies on Space env vars
+                subprocess.run(["dvc", "pull", "-v"], check=True)
+            except subprocess.CalledProcessError as e:
+                # Surface a clear message; logs will show the error
+                raise FileNotFoundError(
+                    f"DVC pull failed. Missing artifacts: {', '.join(missing)}. "
+                    "Ensure Space Secrets include AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "
+                    "(you can set both to your DagsHub token)."
+                ) from e
 
-            # Recheck after pull
+            # Re-check after pull
             missing = [
                 f for f in required
                 if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
             ]
             if missing:
                 raise FileNotFoundError(
-                    f"Missing artifacts: {', '.join(missing)}. "
-                    "Ensure DVC credentials are set in the Space (AWS_ACCESS_KEY_ID/SECRET) and try again."
+                    f"Missing artifacts after DVC pull: {', '.join(missing)}. "
+                    "Verify the artifacts were pushed to the DVC remote and that Space Secrets are correct."
                 )
 
     ensure_artifacts()
+
     processor = DataProcessor.load(ARTIFACTS_DIR)
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError("Model artifact not found. Please train first.")
