@@ -81,6 +81,12 @@ jobs:
         run: |
           dvc push -r origin
 
+      - name: Verify artifacts exist locally
+        run: |
+          ls -la artifacts/
+          echo "Artifacts generated:"
+          find artifacts/ -name "*.joblib" -type f
+
       - name: Commit updated dvc.lock (if changed)
         run: |
           git config user.name "github-actions[bot]"
