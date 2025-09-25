@@ -115,10 +115,15 @@ def load_artifacts():
                 return m
 
             md5s = _md5_map()
-
+            
             # Build filename -> md5 map for required artifacts using dvc.lock entries
-            file_md5_map = {fname: md5s.get(f"artifacts/{fname}") for fname in required}
-            missing_in_lock = [fname for fname, md5 in file_md5_map.items() if not md5]
+            file_md5_map = {}
+            for fname in required:
+                md5_key = f"artifacts/{fname}"
+                if md5_key in md5s:
+                    file_md5_map[fname] = md5s[md5_key]
+            
+            missing_in_lock = [fname for fname in required if fname not in file_md5_map]
             if missing_in_lock:
                 raise FileNotFoundError(
                     f"Checksums for {', '.join(missing_in_lock)} not found in dvc.lock. "
