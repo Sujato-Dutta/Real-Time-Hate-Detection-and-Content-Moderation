@@ -144,36 +144,48 @@ def load_artifacts():
             )
 
             for fname, key_md5 in file_md5_map.items():
-                # Primary: DVC remote layout is 'md5/<first-two>/<rest>'
-                primary_key = f"md5/{key_md5[:2]}/{key_md5[2:]}"
-                # Fallback: some setups may include 'files/md5/...'
-                fallback_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
+                # DVC 3.0+ uses 'files/md5/<first-two>/<rest>' layout
+                primary_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
+                # Fallback: DVC 2.x used 'md5/<first-two>/<rest>' layout  
+                fallback_key = f"md5/{key_md5[:2]}/{key_md5[2:]}"
+                # Additional fallback: some setups store at root
+                root_key = key_md5
                 dest = os.path.join(ARTIFACTS_DIR, fname)
 
-                try:
-                    # quick existence check to fail fast on wrong key before download retries
-                    s3.head_object(Bucket=bucket, Key=primary_key)
-                    s3.download_file(bucket, primary_key, dest)
-                except botocore.exceptions.ClientError as e:
-                    code = e.response.get("Error", {}).get("Code")
-                    msg = e.response.get("Error", {}).get("Message")
-                    if code in ("404", "NoSuchKey", "NotFound"):
-                        # try fallback layout once
-                        try:
-                            s3.head_object(Bucket=bucket, Key=fallback_key)
-                            s3.download_file(bucket, fallback_key, dest)
-                        except Exception as e2:
+                print(f"Downloading {fname} (md5: {key_md5})")
+                success = False
+                
+                # Try all possible key layouts
+                for attempt, key in enumerate([primary_key, fallback_key, root_key], 1):
+                    try:
+                        print(f"  Attempt {attempt}: trying key '{key}'")
+                        # Quick existence check
+                        s3.head_object(Bucket=bucket, Key=key)
+                        s3.download_file(bucket, key, dest)
+                        print(f"  ✓ Successfully downloaded {fname} using key: {key}")
+                        success = True
+                        break
+                    except botocore.exceptions.ClientError as e:
+                        code = e.response.get("Error", {}).get("Code")
+                        msg = e.response.get("Error", {}).get("Message")
+                        print(f"  ✗ Key '{key}' failed: {code} - {msg}")
+                        if code not in ("404", "NoSuchKey", "NotFound"):
+                            # Non-404 error (auth, permissions, etc.) - don't try other keys
                             raise FileNotFoundError(
-                                f"Missing artifact {fname} in S3. "
-                                f"Tried keys: '{primary_key}' and '{fallback_key}'. "
+                                f"Failed to download {fname} from DagsHub S3. "
+                                f"Bucket={bucket}, Endpoint={endpoint}, Key={key}. "
                                 f"Error: {code} - {msg}"
-                            ) from e2
-                    else:
-                        raise FileNotFoundError(
-                            f"Failed to download {fname} from DagsHub S3. "
-                            f"Bucket={bucket}, Endpoint={endpoint}, Key={primary_key}. "
-                            f"Error: {code} - {msg}"
-                        ) from e
+                            ) from e
+                    except Exception as e:
+                        print(f"  ✗ Key '{key}' failed with unexpected error: {e}")
+                
+                if not success:
+                    raise FileNotFoundError(
+                        f"Missing artifact {fname} (md5: {key_md5}) in S3. "
+                        f"Tried keys: '{primary_key}', '{fallback_key}', '{root_key}'. "
+                        f"Bucket: {bucket}, Endpoint: {endpoint}. "
+                        "Ensure artifacts were pushed with 'dvc push -r origin'."
+                    )
             # Re-check after S3 download
             missing = [
                 f for f in required
