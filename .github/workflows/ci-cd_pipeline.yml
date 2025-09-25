@@ -204,7 +204,6 @@ jobs:
           __pycache__/
           .DS_Store
           EOF
-          EOF
 
       - name: Push to Hugging Face Space (with artifacts)
         env:
