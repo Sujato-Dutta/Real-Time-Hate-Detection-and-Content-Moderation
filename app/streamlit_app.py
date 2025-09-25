@@ -71,13 +71,13 @@ def load_artifacts():
             if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
         ]
         if missing:
-            # Fallback: direct S3 download via boto3 using md5 checksums from dvc.lock
+            # Direct S3 download via boto3 using md5 checksums from dvc.lock
             try:
                 import boto3
             except Exception as e:
                 raise FileNotFoundError(
                     f"Missing artifacts: {', '.join(missing)}. "
-                    "boto3 is unavailable. Install boto3 or ensure DVC can access remote."
+                    "boto3 is unavailable. Install boto3 or ensure credentials in Space."
                 ) from e
 
             if not bucket or not endpoint:
@@ -122,7 +122,7 @@ def load_artifacts():
                 aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
             )
 
-            # DVC remote layout uses "files/md5/<first-two>/<rest>" <mcreference link="https://dvc.org/doc/user-guide/project-structure/internal-files" index="5">5</mcreference>
+            # Correct DVC remote layout: "files/md5/<first-two>/<rest>"
             for fname in missing:
                 key_md5 = md5s.get(f"artifacts/{fname}")
                 if not key_md5 or len(key_md5) < 3:
