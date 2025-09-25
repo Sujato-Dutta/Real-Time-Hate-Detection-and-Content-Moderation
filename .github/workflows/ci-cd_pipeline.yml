@@ -210,7 +210,7 @@ jobs:
           .DS_Store
           EOF
 
-      - name: Push to Hugging Face Space (filtered)
+      - name: Push to Hugging Face Space (with artifacts)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_USER: ${{ secrets.HF_USER }}
@@ -218,11 +218,24 @@ jobs:
         run: |
           set -euo pipefail
           cd space_repo
-          git init -b main
+          
+          # Clone the existing Space repo to preserve history
+          git clone "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}" temp_space || {
+            echo "Space doesn't exist yet, creating new repo"
+            git init -b main
+          }
+          
+          # If clone succeeded, copy .git directory to preserve history
+          if [ -d temp_space/.git ]; then
+            cp -r temp_space/.git ./
+            rm -rf temp_space
+          fi
+          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "CI: deploy to Space (filtered, no binary artifacts)"
-          git remote add space "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
-          # Push with artifacts included
-          git push --force space main
+          git commit -m "CI: deploy to Space with artifacts" || echo "No changes to commit"
+          git remote add space "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}" || true
+          
+          # Try normal push first, fallback to force push if needed
+          git push space main || git push --force space main
