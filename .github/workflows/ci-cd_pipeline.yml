@@ -64,6 +64,13 @@ jobs:
           dvc remote list -v || true
           cat .dvc/config || true
 
+      - name: Remove DVC tracking and use Git for artifacts
+        run: |
+          # Remove DVC tracking of artifacts since we're using Git now
+          git rm --cached artifacts/*.joblib || true
+          git add .
+          git commit -m "Remove DVC tracking of artifacts" || true
+          
       - name: Run ETL pipeline (Kaggle → transform → Supabase)
         run: |
           python run_etl_pipeline.py
@@ -72,14 +79,14 @@ jobs:
         run: |
           python run_data_ingestion
 
-      - name: DVC repro (preprocess → train)
+      - name: Generate artifacts (preprocess → train)
         run: |
-          dvc pull -r origin || true
-          dvc repro
-
-      - name: DVC push artifacts
+          python -c "import subprocess; subprocess.run(['dvc', 'repro'], check=False)"
+          
+      - name: Commit artifacts to Git
         run: |
-          dvc push -r origin
+          git add artifacts/
+          git commit -m "Update model artifacts" || echo "No changes to commit"
 
       - name: Verify artifacts exist locally
         run: |
