@@ -165,65 +165,45 @@ def load_artifacts():
             except Exception as e:
                 logger.error(f"Failed to list bucket contents: {e}")
 
-            for fname, key_md5 in file_md5_map.items():
-                # DVC stores artifacts under 'artifacts/' folder in DagsHub
-                # Try different possible key formats with artifacts/ prefix
-                artifacts_dvc3_key = f"artifacts/files/md5/{key_md5[:2]}/{key_md5[2:]}"
-                artifacts_dvc2_key = f"artifacts/md5/{key_md5[:2]}/{key_md5[2:]}"
-                artifacts_root_key = f"artifacts/{key_md5}"
-                
-                # Also try without artifacts/ prefix (fallback)
-                dvc3_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
-                dvc2_key = f"md5/{key_md5[:2]}/{key_md5[2:]}"
-                root_key = key_md5
-                
+            for fname in required:
+                # DagsHub stores artifacts with their original names in the artifacts/ folder
+                s3_key = f"artifacts/{fname}"
                 dest = os.path.join(ARTIFACTS_DIR, fname)
 
-                logger.info(f"Downloading {fname} (md5: {key_md5})")
-                success = False
+                logger.info(f"Downloading {fname}")
                 
-                # Try all possible key layouts - prioritize artifacts/ prefix since that's where they are in DagsHub
-                key_attempts = [
-                    artifacts_dvc3_key,    # artifacts/files/md5/xx/xxxxx (DVC 3.0 with artifacts/)
-                    artifacts_dvc2_key,    # artifacts/md5/xx/xxxxx (DVC 2.x with artifacts/)
-                    artifacts_root_key,    # artifacts/xxxxx (root with artifacts/)
-                    dvc3_key,             # files/md5/xx/xxxxx (DVC 3.0 without artifacts/)
-                    dvc2_key,             # md5/xx/xxxxx (DVC 2.x without artifacts/)
-                    root_key              # xxxxx (root without artifacts/)
-                ]
-                
-                for attempt, key in enumerate(key_attempts, 1):
-                    try:
-                        logger.info(f"  Attempt {attempt}: trying key '{key}'")
-                        # Quick existence check
-                        s3.head_object(Bucket=bucket, Key=key)
-                        s3.download_file(bucket, key, dest)
-                        logger.info(f"  ✓ Successfully downloaded {fname} using key: {key}")
-                        success = True
-                        break
-                    except botocore.exceptions.ClientError as e:
-                        code = e.response.get("Error", {}).get("Code")
-                        msg = e.response.get("Error", {}).get("Message")
-                        logger.warning(f"  ✗ Key '{key}' failed: {code} - {msg}")
-                        if code not in ("404", "NoSuchKey", "NotFound"):
-                            # Non-404 error (auth, permissions, etc.) - don't try other keys
-                            raise FileNotFoundError(
-                                f"Failed to download {fname} from DagsHub S3. "
-                                f"Bucket={bucket}, Endpoint={endpoint}, Key={key}. "
-                                f"Error: {code} - {msg}"
-                            ) from e
-                    except Exception as e:
-                        logger.warning(f"  ✗ Key '{key}' failed with unexpected error: {e}")
-                
-                if not success:
-                    tried_keys = "', '".join(key_attempts)
+                try:
+                    logger.info(f"  Trying key '{s3_key}'")
+                    # Quick existence check
+                    s3.head_object(Bucket=bucket, Key=s3_key)
+                    s3.download_file(bucket, s3_key, dest)
+                    logger.info(f"  ✓ Successfully downloaded {fname} using key: {s3_key}")
+                except botocore.exceptions.ClientError as e:
+                    code = e.response.get("Error", {}).get("Code")
+                    msg = e.response.get("Error", {}).get("Message")
+                    logger.warning(f"  ✗ Key '{s3_key}' failed: {code} - {msg}")
+                    if code not in ("404", "NoSuchKey", "NotFound"):
+                        # Non-404 error (auth, permissions, etc.)
+                        raise FileNotFoundError(
+                            f"Failed to download {fname} from DagsHub S3. "
+                            f"Bucket={bucket}, Endpoint={endpoint}, Key={s3_key}. "
+                            f"Error: {code} - {msg}"
+                        ) from e
+                    else:
+                        raise FileNotFoundError(
+                            f"Missing artifact {fname} in S3. "
+                            f"Tried key: '{s3_key}'. "
+                            f"Bucket: {bucket}, Endpoint: {endpoint}. "
+                            "The artifact may not have been pushed to DVC remote. "
+                            "Please run 'dvc push -r origin' locally or check if CI/CD completed successfully."
+                        ) from e
+                except Exception as e:
+                    logger.warning(f"  ✗ Key '{s3_key}' failed with unexpected error: {e}")
                     raise FileNotFoundError(
-                        f"Missing artifact {fname} (md5: {key_md5}) in S3. "
-                        f"Tried keys: '{tried_keys}'. "
-                        f"Bucket: {bucket}, Endpoint: {endpoint}. "
-                        "The artifacts may not have been pushed to DVC remote. "
-                        "Please run 'dvc push -r origin' locally or check if CI/CD completed successfully."
-                    )
+                        f"Failed to download {fname} from DagsHub S3. "
+                        f"Bucket={bucket}, Endpoint={endpoint}, Key={s3_key}. "
+                        f"Unexpected error: {e}"
+                    ) from e
             # Re-check after S3 download
             missing = [
                 f for f in required
