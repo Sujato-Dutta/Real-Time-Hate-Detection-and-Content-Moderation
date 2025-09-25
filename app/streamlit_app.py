@@ -115,6 +115,16 @@ def load_artifacts():
                 return m
 
             md5s = _md5_map()
+
+            # Build filename -> md5 map for required artifacts using dvc.lock entries
+            file_md5_map = {fname: md5s.get(f"artifacts/{fname}") for fname in required}
+            missing_in_lock = [fname for fname, md5 in file_md5_map.items() if not md5]
+            if missing_in_lock:
+                raise FileNotFoundError(
+                    f"Checksums for {', '.join(missing_in_lock)} not found in dvc.lock. "
+                    "Run training/ETL to regenerate dvc.lock, then `dvc push`."
+                )
+
             s3 = boto3.client(
                 "s3",
                 endpoint_url=endpoint,
@@ -156,7 +166,7 @@ def load_artifacts():
                     else:
                         raise FileNotFoundError(
                             f"Failed to download {fname} from DagsHub S3. "
-                            f"Bucket={bucket}, Endpoint={endpoint_url}, Key={primary_key}. "
+                            f"Bucket={bucket}, Endpoint={endpoint}, Key={primary_key}. "
                             f"Error: {code} - {msg}"
                         ) from e
             # Re-check after S3 download
