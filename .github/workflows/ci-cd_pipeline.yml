@@ -180,34 +180,30 @@ jobs:
           git add artifacts/.gitkeep
           git commit -m "CI: add empty artifacts dir for Space build" || true
 
-      - name: Prepare Space repo (filtered, no binaries)
+      - name: Prepare Space repo (with artifacts)
         shell: bash
         run: |
           set -euo pipefail
           rm -rf space_repo
           mkdir -p space_repo
 
-          # Copy only what the Space needs (no large binaries)
+          # Copy everything the Space needs INCLUDING artifacts
           [ -d app ] && cp -r app space_repo/ || true
           [ -d src ] && cp -r src space_repo/ || true
           [ -d .dvc ] && cp -r .dvc space_repo/ || true
+          [ -d artifacts ] && cp -r artifacts space_repo/ || true
           for f in dvc.yaml dvc.lock requirements.txt Dockerfile README.md setup.py; do
             [ -f "$f" ] && cp "$f" space_repo/ || true
           done
 
-          # Ensure Dockerfile's COPY artifacts step has a source; commit a marker so Git tracks the dir
-          mkdir -p space_repo/artifacts
-          touch space_repo/artifacts/.gitkeep
-
-          # Add .gitignore to keep Space repo clean, but allow the .gitkeep to be tracked
+          # Add .gitignore to keep Space repo clean
           cat > space_repo/.gitignore << 'EOF'
-          artifacts/*
-          !artifacts/.gitkeep
           data/
           mlruns/
           *.log
           __pycache__/
           .DS_Store
+          EOF
           EOF
 
       - name: Push to Hugging Face Space (with artifacts)
@@ -236,6 +232,4 @@ jobs:
           git add -A
           git commit -m "CI: deploy to Space with artifacts" || echo "No changes to commit"
           git remote add space "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}" || true
-          
-          # Try normal push first, fallback to force push if needed
           git push space main || git push --force space main
