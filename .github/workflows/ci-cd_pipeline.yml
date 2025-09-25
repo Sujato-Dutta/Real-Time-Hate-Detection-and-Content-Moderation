@@ -139,6 +139,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Ensure full history (unshallow if needed)
+        shell: bash
+        run: |
+          if git rev-parse --is-shallow-repository | grep -q true; then
+            git fetch --unshallow --tags
+          fi
 
       - name: Push repo to Hugging Face Space (trigger rebuild)
         env:
@@ -147,4 +155,5 @@ jobs:
           HF_SPACE: ${{ secrets.HF_SPACE }}
         run: |
           git remote add space "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
-          git push space HEAD:main --force
+          # Retry once in case of transient server-side hooks (e.g., LFS)
+          git push space HEAD:main --force || (sleep 10 && git push space HEAD:main --force)
