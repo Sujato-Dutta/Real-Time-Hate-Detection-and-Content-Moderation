@@ -74,6 +74,7 @@ def load_artifacts():
             # Direct S3 download via boto3 using md5 checksums from dvc.lock
             try:
                 import boto3
+                import botocore
             except Exception as e:
                 raise FileNotFoundError(
                     f"Missing artifacts: {', '.join(missing)}. "
@@ -120,26 +121,44 @@ def load_artifacts():
                 region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
                 aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
                 aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+                config=botocore.config.Config(
+                    s3={"addressing_style": "path"},
+                    retries={"max_attempts": 3, "mode": "standard"},
+                    signature_version="s3v4",
+                ),
             )
 
-            # Correct DVC remote layout: "files/md5/<first-two>/<rest>"
-            for fname in missing:
-                key_md5 = md5s.get(f"artifacts/{fname}")
-                if not key_md5 or len(key_md5) < 3:
-                    raise FileNotFoundError(
-                        f"Cannot resolve md5 for {fname} from dvc.lock. "
-                        "Verify the pipeline ran and dvc.lock contains checksums."
-                    )
-                remote_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
+            for fname, key_md5 in file_md5_map.items():
+                # Primary: DVC remote layout is 'md5/<first-two>/<rest>'
+                primary_key = f"md5/{key_md5[:2]}/{key_md5[2:]}"
+                # Fallback: some setups may include 'files/md5/...'
+                fallback_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
                 dest = os.path.join(ARTIFACTS_DIR, fname)
-                try:
-                    s3.download_file(bucket, remote_key, dest)
-                except Exception as e:
-                    raise FileNotFoundError(
-                        f"Failed to download {fname} from DagsHub S3. "
-                        "Check Space Secrets (AWS_ACCESS_KEY_ID/SECRET) or DAGSHUB_TOKEN."
-                    ) from e
 
+                try:
+                    # quick existence check to fail fast on wrong key before download retries
+                    s3.head_object(Bucket=bucket, Key=primary_key)
+                    s3.download_file(bucket, primary_key, dest)
+                except botocore.exceptions.ClientError as e:
+                    code = e.response.get("Error", {}).get("Code")
+                    msg = e.response.get("Error", {}).get("Message")
+                    if code in ("404", "NoSuchKey", "NotFound"):
+                        # try fallback layout once
+                        try:
+                            s3.head_object(Bucket=bucket, Key=fallback_key)
+                            s3.download_file(bucket, fallback_key, dest)
+                        except Exception as e2:
+                            raise FileNotFoundError(
+                                f"Missing artifact {fname} in S3. "
+                                f"Tried keys: '{primary_key}' and '{fallback_key}'. "
+                                f"Error: {code} - {msg}"
+                            ) from e2
+                    else:
+                        raise FileNotFoundError(
+                            f"Failed to download {fname} from DagsHub S3. "
+                            f"Bucket={bucket}, Endpoint={endpoint_url}, Key={primary_key}. "
+                            f"Error: {code} - {msg}"
+                        ) from e
             # Re-check after S3 download
             missing = [
                 f for f in required
