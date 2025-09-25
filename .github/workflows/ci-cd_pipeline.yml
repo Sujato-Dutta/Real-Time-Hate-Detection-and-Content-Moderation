@@ -116,9 +116,11 @@ jobs:
         shell: bash
         run: |
           NAME="${{ github.event.repository.name }}"
-          # Lowercase, replace non-alnum with '-', trim leading/trailing '-'
-          SANITIZED=$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g;s/^-+//;s/-+$//')
-          echo "image=ghcr.io/${{ github.repository_owner }}/$SANITIZED" >> "$GITHUB_OUTPUT"
+          OWNER="${{ github.repository_owner }}"
+          # Lowercase & sanitize: replace non-alnum with '-', trim leading/trailing '-'
+          SANITIZED_NAME=$(echo "$NAME"  | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g;s/^-+//;s/-+$//')
+          SANITIZED_OWNER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g;s/^-+//;s/-+$//')
+          echo "image=ghcr.io/${SANITIZED_OWNER}/${SANITIZED_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
