@@ -141,6 +141,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Ensure full history (unshallow if needed)
         shell: bash
         run: |
@@ -148,12 +149,47 @@ jobs:
             git fetch --unshallow --tags
           fi
 
-      - name: Push repo to Hugging Face Space (trigger rebuild)
+      - name: Prepare Space repo (filtered, no binaries)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf space_repo
+          mkdir -p space_repo
+
+          # Copy only what the Space needs (no large binaries)
+          [ -d app ] && cp -r app space_repo/ || true
+          [ -d src ] && cp -r src space_repo/ || true
+          [ -d .dvc ] && cp -r .dvc space_repo/ || true
+          for f in dvc.yaml dvc.lock requirements.txt Dockerfile README.md setup.py; do
+            [ -f "$f" ] && cp "$f" space_repo/ || true
+          done
+
+          # Ensure Dockerfile's COPY artifacts step has a source (empty dir is OK)
+          mkdir -p space_repo/artifacts
+
+          # Add .gitignore to keep Space repo clean
+          cat > space_repo/.gitignore << 'EOF'
+          artifacts/
+          data/
+          mlruns/
+          *.log
+          __pycache__/
+          .DS_Store
+          EOF
+
+      - name: Push to Hugging Face Space (filtered)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_USER: ${{ secrets.HF_USER }}
           HF_SPACE: ${{ secrets.HF_SPACE }}
         run: |
+          set -euo pipefail
+          cd space_repo
+          git init -b main
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "CI: deploy to Space (filtered, no binary artifacts)"
           git remote add space "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
-          # Retry once in case of transient server-side hooks (e.g., LFS)
-          git push space HEAD:main --force || (sleep 10 && git push space HEAD:main --force)
+          # Force-push a minimal tree without binary artifacts
+          git push --force space main
