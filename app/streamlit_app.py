@@ -130,6 +130,15 @@ def load_artifacts():
                     "Run training/ETL to regenerate dvc.lock, then `dvc push`."
                 )
 
+            # Add debug logging for S3 connection
+            import logging
+            logging.basicConfig(level=logging.INFO)
+            logger = logging.getLogger(__name__)
+            
+            logger.info(f"Connecting to S3: bucket={bucket}, endpoint={endpoint}")
+            logger.info(f"Required artifacts: {required}")
+            logger.info(f"Missing artifacts: {missing}")
+            
             s3 = boto3.client(
                 "s3",
                 endpoint_url=endpoint,
@@ -142,33 +151,60 @@ def load_artifacts():
                     signature_version="s3v4",
                 ),
             )
+            
+            # First, let's list what's actually in the bucket to debug
+            try:
+                logger.info("Listing bucket contents to debug...")
+                response = s3.list_objects_v2(Bucket=bucket, MaxKeys=50)
+                if 'Contents' in response:
+                    logger.info(f"Found {len(response['Contents'])} objects in bucket:")
+                    for obj in response['Contents'][:10]:  # Show first 10 objects
+                        logger.info(f"  - {obj['Key']} (size: {obj['Size']})")
+                else:
+                    logger.warning("Bucket appears to be empty or inaccessible")
+            except Exception as e:
+                logger.error(f"Failed to list bucket contents: {e}")
 
             for fname, key_md5 in file_md5_map.items():
-                # DVC 3.0+ uses 'files/md5/<first-two>/<rest>' layout fix
-                primary_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
-                # Fallback: DVC 2.x used 'md5/<first-two>/<rest>' layout  
-                fallback_key = f"md5/{key_md5[:2]}/{key_md5[2:]}"
-                # Additional fallback: some setups store at root
+                # DVC stores artifacts under 'artifacts/' folder in DagsHub
+                # Try different possible key formats with artifacts/ prefix
+                artifacts_dvc3_key = f"artifacts/files/md5/{key_md5[:2]}/{key_md5[2:]}"
+                artifacts_dvc2_key = f"artifacts/md5/{key_md5[:2]}/{key_md5[2:]}"
+                artifacts_root_key = f"artifacts/{key_md5}"
+                
+                # Also try without artifacts/ prefix (fallback)
+                dvc3_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
+                dvc2_key = f"md5/{key_md5[:2]}/{key_md5[2:]}"
                 root_key = key_md5
+                
                 dest = os.path.join(ARTIFACTS_DIR, fname)
 
-                print(f"Downloading {fname} (md5: {key_md5})")
+                logger.info(f"Downloading {fname} (md5: {key_md5})")
                 success = False
                 
-                # Try all possible key layouts
-                for attempt, key in enumerate([primary_key, fallback_key, root_key], 1):
+                # Try all possible key layouts - prioritize artifacts/ prefix since that's where they are in DagsHub
+                key_attempts = [
+                    artifacts_dvc3_key,    # artifacts/files/md5/xx/xxxxx (DVC 3.0 with artifacts/)
+                    artifacts_dvc2_key,    # artifacts/md5/xx/xxxxx (DVC 2.x with artifacts/)
+                    artifacts_root_key,    # artifacts/xxxxx (root with artifacts/)
+                    dvc3_key,             # files/md5/xx/xxxxx (DVC 3.0 without artifacts/)
+                    dvc2_key,             # md5/xx/xxxxx (DVC 2.x without artifacts/)
+                    root_key              # xxxxx (root without artifacts/)
+                ]
+                
+                for attempt, key in enumerate(key_attempts, 1):
                     try:
-                        print(f"  Attempt {attempt}: trying key '{key}'")
+                        logger.info(f"  Attempt {attempt}: trying key '{key}'")
                         # Quick existence check
                         s3.head_object(Bucket=bucket, Key=key)
                         s3.download_file(bucket, key, dest)
-                        print(f"  ✓ Successfully downloaded {fname} using key: {key}")
+                        logger.info(f"  ✓ Successfully downloaded {fname} using key: {key}")
                         success = True
                         break
                     except botocore.exceptions.ClientError as e:
                         code = e.response.get("Error", {}).get("Code")
                         msg = e.response.get("Error", {}).get("Message")
-                        print(f"  ✗ Key '{key}' failed: {code} - {msg}")
+                        logger.warning(f"  ✗ Key '{key}' failed: {code} - {msg}")
                         if code not in ("404", "NoSuchKey", "NotFound"):
                             # Non-404 error (auth, permissions, etc.) - don't try other keys
                             raise FileNotFoundError(
@@ -177,14 +213,16 @@ def load_artifacts():
                                 f"Error: {code} - {msg}"
                             ) from e
                     except Exception as e:
-                        print(f"  ✗ Key '{key}' failed with unexpected error: {e}")
+                        logger.warning(f"  ✗ Key '{key}' failed with unexpected error: {e}")
                 
                 if not success:
+                    tried_keys = "', '".join(key_attempts)
                     raise FileNotFoundError(
                         f"Missing artifact {fname} (md5: {key_md5}) in S3. "
-                        f"Tried keys: '{primary_key}', '{fallback_key}', '{root_key}'. "
+                        f"Tried keys: '{tried_keys}'. "
                         f"Bucket: {bucket}, Endpoint: {endpoint}. "
-                        "Ensure artifacts were pushed with 'dvc push -r origin'."
+                        "The artifacts may not have been pushed to DVC remote. "
+                        "Please run 'dvc push -r origin' locally or check if CI/CD completed successfully."
                     )
             # Re-check after S3 download
             missing = [
