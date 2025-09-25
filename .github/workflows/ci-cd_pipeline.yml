@@ -149,6 +149,17 @@ jobs:
             git fetch --unshallow --tags
           fi
 
+      - name: Ensure empty artifacts dir exists for Space build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p artifacts
+          touch artifacts/.gitkeep
+          git add artifacts/.gitkeep
+          git commit -m "CI: add empty artifacts dir for Space build" || true
+
       - name: Prepare Space repo (filtered, no binaries)
         shell: bash
         run: |
