@@ -144,7 +144,7 @@ def load_artifacts():
             )
 
             for fname, key_md5 in file_md5_map.items():
-                # DVC 3.0+ uses 'files/md5/<first-two>/<rest>' layout
+                # DVC 3.0+ uses 'files/md5/<first-two>/<rest>' layout fix
                 primary_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
                 # Fallback: DVC 2.x used 'md5/<first-two>/<rest>' layout  
                 fallback_key = f"md5/{key_md5[:2]}/{key_md5[2:]}"
