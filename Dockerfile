@@ -37,4 +37,5 @@ RUN mkdir -p ./artifacts
 EXPOSE 8501
 
 # Pull artifacts if DVC is configured (won't fail build/run if not)
-CMD ["sh", "-c", "dvc pull || true; streamlit run app/streamlit_app.py --server.address 0.0.0.0 --server.port ${PORT:-8501}"]
+# CMD ["sh", "-c", "dvc pull || true; streamlit run app/streamlit_app.py --server.address 0.0.0.0 --server.port ${PORT:-8501}"]
+CMD ["sh", "-c", "streamlit run app/streamlit_app.py --server.address 0.0.0.0 --server.port ${PORT:-8501}"]

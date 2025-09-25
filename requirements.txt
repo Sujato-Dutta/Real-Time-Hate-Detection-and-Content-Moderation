@@ -16,3 +16,4 @@ datasets
 dagshub
 dvc
 dvc-s3
+boto3

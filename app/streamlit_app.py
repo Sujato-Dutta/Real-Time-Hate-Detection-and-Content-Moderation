@@ -57,7 +57,6 @@ def load_artifacts():
 
         endpoint, bucket = _read_dvc_remote()
         if endpoint:
-            # Some libraries use AWS_ENDPOINT_URL, others AWS_ENDPOINT_URL_S3; set both
             os.environ.setdefault("AWS_ENDPOINT_URL", endpoint)
             os.environ.setdefault("AWS_ENDPOINT_URL_S3", endpoint)
 
@@ -72,105 +71,85 @@ def load_artifacts():
             if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
         ]
         if missing:
-            # Try DVC pull first
+            # Fallback: direct S3 download via boto3 using md5 checksums from dvc.lock
             try:
-                subprocess.run(["dvc", "remote", "modify", "origin", "region", os.environ.get("AWS_DEFAULT_REGION", "us-east-1")], check=False)
-                if endpoint:
-                    subprocess.run(["dvc", "remote", "modify", "origin", "endpointurl", endpoint], check=False)
-                # Use env so dvc-s3 picks up AWS_* vars
-                subprocess.run(["dvc", "pull", "-r", "origin", "-v"], check=True, env=os.environ.copy())
-            except subprocess.CalledProcessError:
-                # Fallback: direct S3 download via boto3 using md5 checksums from dvc.lock
-                try:
-                    import boto3
-                except Exception as e:
-                    raise FileNotFoundError(
-                        f"DVC pull failed and boto3 is unavailable. Missing artifacts: {', '.join(missing)}. "
-                        "Install boto3 or ensure DVC credentials are correct."
-                    ) from e
+                import boto3
+            except Exception as e:
+                raise FileNotFoundError(
+                    f"Missing artifacts: {', '.join(missing)}. "
+                    "boto3 is unavailable. Install boto3 or ensure DVC can access remote."
+                ) from e
 
-                if not bucket or not endpoint:
-                    raise FileNotFoundError(
-                        f"DVC pull failed and remote config is incomplete (bucket or endpoint missing). "
-                        f"Missing artifacts: {', '.join(missing)}. Check .dvc/config."
-                    )
-
-                # Parse dvc.lock to build mapping: artifacts/<file> -> md5
-                def _md5_map():
-                    m = {}
-                    try:
-                        lock_path = Path(ROOT) / "dvc.lock"
-                        lines = lock_path.read_text().splitlines()
-                        current = None
-                        for i, raw in enumerate(lines):
-                            line = raw.strip()
-                            if line.startswith("- path:"):
-                                path_val = line.split(":", 1)[1].strip()
-                                current = path_val  # e.g., artifacts/model.joblib
-                                # Find md5 in subsequent lines
-                                j = i + 1
-                                while j < len(lines):
-                                    nxt = lines[j].strip()
-                                    if nxt.startswith("- path:"):
-                                        break
-                                    if nxt.startswith("md5:"):
-                                        md5 = nxt.split(":", 1)[1].strip()
-                                        m[current] = md5
-                                        break
-                                    j += 1
-                    except Exception:
-                        pass
-                    return m
-
-                md5s = _md5_map()
-                s3 = boto3.client(
-                    "s3",
-                    endpoint_url=endpoint,
-                    region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-                    aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-                    aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+            if not bucket or not endpoint:
+                raise FileNotFoundError(
+                    f"Remote config incomplete (bucket or endpoint missing). "
+                    f"Missing artifacts: {', '.join(missing)}. Check .dvc/config."
                 )
 
-                # DVC remote layout uses hierarchical md5: md5/aa/aabbcc...
-                for fname in missing:
-                    key_md5 = md5s.get(f"artifacts/{fname}")
-                    if not key_md5 or len(key_md5) < 3:
-                        raise FileNotFoundError(
-                            f"Cannot resolve md5 for {fname} from dvc.lock. "
-                            "Verify the pipeline ran and dvc.lock contains checksums."
-                        )
-                    remote_key = f"md5/{key_md5[:2]}/{key_md5[2:]}"
-                    dest = os.path.join(ARTIFACTS_DIR, fname)
-                    try:
-                        s3.download_file(bucket, remote_key, dest)
-                    except Exception as e:
-                        raise FileNotFoundError(
-                            f"Failed to download {fname} from DagsHub S3. "
-                            "Check Space Secrets (AWS_ACCESS_KEY_ID/SECRET) or DAGSHUB_TOKEN."
-                        ) from e
+            # Parse dvc.lock to build mapping: artifacts/<file> -> md5
+            def _md5_map():
+                m = {}
+                try:
+                    lock_path = Path(ROOT) / "dvc.lock"
+                    lines = lock_path.read_text().splitlines()
+                    current = None
+                    for i, raw in enumerate(lines):
+                        line = raw.strip()
+                        if line.startswith("- path:"):
+                            path_val = line.split(":", 1)[1].strip()
+                            current = path_val  # e.g., artifacts/model.joblib
+                            # Find md5 in subsequent lines
+                            j = i + 1
+                            while j < len(lines):
+                                nxt = lines[j].strip()
+                                if nxt.startswith("- path:"):
+                                    break
+                                if nxt.startswith("md5:"):
+                                    md5 = nxt.split(":", 1)[1].strip()
+                                    m[current] = md5
+                                    break
+                                j += 1
+                except Exception:
+                    pass
+                return m
 
-                # Re-check after S3 download
-                missing = [
-                    f for f in required
-                    if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
-                ]
-                if missing:
-                    raise FileNotFoundError(
-                        f"Missing artifacts after S3 download: {', '.join(missing)}. "
-                        "Verify artifacts exist in the DVC remote (dvc push)."
-                    )
+            md5s = _md5_map()
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=endpoint,
+                region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+            )
 
-            else:
-                # Re-check after successful DVC pull
-                missing = [
-                    f for f in required
-                    if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
-                ]
-                if missing:
+            # DVC remote layout uses "files/md5/<first-two>/<rest>" <mcreference link="https://dvc.org/doc/user-guide/project-structure/internal-files" index="5">5</mcreference>
+            for fname in missing:
+                key_md5 = md5s.get(f"artifacts/{fname}")
+                if not key_md5 or len(key_md5) < 3:
                     raise FileNotFoundError(
-                        f"Missing artifacts after DVC pull: {', '.join(missing)}. "
-                        "Verify the artifacts were pushed and Space Secrets are correct."
+                        f"Cannot resolve md5 for {fname} from dvc.lock. "
+                        "Verify the pipeline ran and dvc.lock contains checksums."
                     )
+                remote_key = f"files/md5/{key_md5[:2]}/{key_md5[2:]}"
+                dest = os.path.join(ARTIFACTS_DIR, fname)
+                try:
+                    s3.download_file(bucket, remote_key, dest)
+                except Exception as e:
+                    raise FileNotFoundError(
+                        f"Failed to download {fname} from DagsHub S3. "
+                        "Check Space Secrets (AWS_ACCESS_KEY_ID/SECRET) or DAGSHUB_TOKEN."
+                    ) from e
+
+            # Re-check after S3 download
+            missing = [
+                f for f in required
+                if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
+            ]
+            if missing:
+                raise FileNotFoundError(
+                    f"Missing artifacts after S3 download: {', '.join(missing)}. "
+                    "Verify artifacts exist in the DVC remote (dvc push)."
+                )
 
     ensure_artifacts()
 
