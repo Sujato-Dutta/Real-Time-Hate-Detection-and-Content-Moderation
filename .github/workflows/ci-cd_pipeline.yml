@@ -175,12 +175,14 @@ jobs:
             [ -f "$f" ] && cp "$f" space_repo/ || true
           done
 
-          # Ensure Dockerfile's COPY artifacts step has a source (empty dir is OK)
+          # Ensure Dockerfile's COPY artifacts step has a source; commit a marker so Git tracks the dir
           mkdir -p space_repo/artifacts
+          touch space_repo/artifacts/.gitkeep
 
-          # Add .gitignore to keep Space repo clean
+          # Add .gitignore to keep Space repo clean, but allow the .gitkeep to be tracked
           cat > space_repo/.gitignore << 'EOF'
-          artifacts/
+          artifacts/*
+          !artifacts/.gitkeep
           data/
           mlruns/
           *.log
