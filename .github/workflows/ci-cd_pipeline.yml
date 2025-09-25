@@ -99,6 +99,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -111,7 +116,8 @@ jobs:
         shell: bash
         run: |
           NAME="${{ github.event.repository.name }}"
-          SANITIZED=$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]-' '-')
+          # Lowercase, replace non-alnum with '-', trim leading/trailing '-'
+          SANITIZED=$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g;s/^-+//;s/-+$//')
           echo "image=ghcr.io/${{ github.repository_owner }}/$SANITIZED" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
