@@ -1,6 +1,9 @@
-Metadata-Version: 2.1
-Name: hate-speech-pipeline
+Metadata-Version: 2.4
+Name: hate_speech_pipeline
 Version: 0.1.0
 Summary: Hate Speech Detection Pipeline
 Author: Sujato Dutta
 Author-email: sujatodutta0204@gmail.com
+Dynamic: author
+Dynamic: author-email
+Dynamic: summary
