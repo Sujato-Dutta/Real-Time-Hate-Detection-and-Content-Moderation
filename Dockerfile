@@ -31,7 +31,8 @@ COPY .dvc ./.dvc
 COPY dvc.yaml dvc.lock ./
 
 # Artifacts (optional: only if you want to bake model into the image)
-COPY artifacts ./artifacts
+# Ensure artifacts directory exists even if repo doesn't include binaries
+RUN mkdir -p ./artifacts
 
 EXPOSE 8501
 

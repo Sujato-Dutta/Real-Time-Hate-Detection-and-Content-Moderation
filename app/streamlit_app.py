@@ -22,6 +22,38 @@ MODEL_PATH = os.path.join(ARTIFACTS_DIR, "model.joblib")
 
 @st.cache_resource(show_spinner=False)
 def load_artifacts():
+    import subprocess
+
+    def ensure_artifacts():
+        required = [
+            "model.joblib",
+            "vectorizer.joblib",
+            "label_encoder.joblib",
+            "data_processor_meta.joblib",
+        ]
+        missing = [
+            f for f in required
+            if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
+        ]
+        if missing:
+            # Try to pull once; relies on Space env vars (AWS_ACCESS_KEY_ID/SECRET)
+            try:
+                subprocess.run(["dvc", "pull"], check=True)
+            except Exception:
+                pass  # ignore and recheck
+
+            # Recheck after pull
+            missing = [
+                f for f in required
+                if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
+            ]
+            if missing:
+                raise FileNotFoundError(
+                    f"Missing artifacts: {', '.join(missing)}. "
+                    "Ensure DVC credentials are set in the Space (AWS_ACCESS_KEY_ID/SECRET) and try again."
+                )
+
+    ensure_artifacts()
     processor = DataProcessor.load(ARTIFACTS_DIR)
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError("Model artifact not found. Please train first.")
