@@ -30,9 +30,8 @@ COPY app ./app
 COPY .dvc ./.dvc
 COPY dvc.yaml dvc.lock ./
 
-# Artifacts (optional: only if you want to bake model into the image)
-# Ensure artifacts directory exists even if repo doesn't include binaries
-RUN mkdir -p ./artifacts
+# Copy artifacts directly into the Docker image
+COPY artifacts/ ./artifacts/
 
 EXPOSE 8501
 

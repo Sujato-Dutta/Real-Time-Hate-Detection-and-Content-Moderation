@@ -66,10 +66,18 @@ def load_artifacts():
             "label_encoder.joblib",
             "data_processor_meta.joblib",
         ]
+        
+        # Check if all artifacts exist locally first
         missing = [
             f for f in required
             if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
         ]
+        
+        if not missing:
+            # All artifacts found locally, no need to download
+            return
+            
+        # Some artifacts are missing, attempt S3 download
         if missing:
             # Direct S3 download via boto3 using md5 checksums from dvc.lock
             try:
@@ -155,64 +163,107 @@ def load_artifacts():
             # First, let's list what's actually in the bucket to debug
             try:
                 logger.info("Listing bucket contents to debug...")
-                response = s3.list_objects_v2(Bucket=bucket, MaxKeys=50)
-                if 'Contents' in response:
-                    logger.info(f"Found {len(response['Contents'])} objects in bucket:")
-                    for obj in response['Contents'][:10]:  # Show first 10 objects
-                        logger.info(f"  - {obj['Key']} (size: {obj['Size']})")
-                else:
+                paginator = s3.get_paginator('list_objects_v2')
+                page_iterator = paginator.paginate(Bucket=bucket, MaxKeys=100)
+                
+                all_keys = []
+                for page in page_iterator:
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            all_keys.append(obj['Key'])
+                
+                logger.info(f"Found {len(all_keys)} objects in S3 bucket:")
+                for key in sorted(all_keys)[:20]:  # Show first 20 keys
+                    logger.info(f"  - {key}")
+                if len(all_keys) > 20:
+                    logger.info(f"  ... and {len(all_keys) - 20} more objects")
+                    
+                if not all_keys:
                     logger.warning("Bucket appears to be empty or inaccessible")
+                    
             except Exception as e:
                 logger.error(f"Failed to list bucket contents: {e}")
 
+            # Download each required artifact with comprehensive debugging
             for fname in required:
-                # DagsHub stores artifacts with their original names in the artifacts/ folder
-                s3_key = f"artifacts/{fname}"
                 dest = os.path.join(ARTIFACTS_DIR, fname)
-
-                logger.info(f"Downloading {fname}")
+                md5_hash = file_md5_map.get(fname, "")
                 
-                try:
+                logger.info(f"Downloading {fname} (MD5: {md5_hash})")
+                
+                # Try multiple possible key formats with comprehensive debugging
+                key_formats = [
+                    # Original filename in artifacts folder
+                    f"artifacts/{fname}",
+                    # Just the filename in root
+                    fname,
+                    # DVC 3.0+ layout with artifacts prefix
+                    f"artifacts/files/md5/{md5_hash[:2]}/{md5_hash[2:]}" if md5_hash else None,
+                    # DVC 2.x layout with artifacts prefix  
+                    f"artifacts/md5/{md5_hash[:2]}/{md5_hash[2:]}" if md5_hash else None,
+                    # DVC 3.0+ layout without artifacts prefix
+                    f"files/md5/{md5_hash[:2]}/{md5_hash[2:]}" if md5_hash else None,
+                    # DVC 2.x layout without artifacts prefix
+                    f"md5/{md5_hash[:2]}/{md5_hash[2:]}" if md5_hash else None,
+                    # Root storage with MD5
+                    md5_hash if md5_hash else None
+                ]
+                
+                # Filter out None values
+                key_formats = [k for k in key_formats if k]
+                
+                tried_keys = []
+                success = False
+                
+                for s3_key in key_formats:
+                    tried_keys.append(s3_key)
                     logger.info(f"  Trying key '{s3_key}'")
-                    # Quick existence check
-                    s3.head_object(Bucket=bucket, Key=s3_key)
-                    s3.download_file(bucket, s3_key, dest)
-                    logger.info(f"  ✓ Successfully downloaded {fname} using key: {s3_key}")
-                except botocore.exceptions.ClientError as e:
-                    code = e.response.get("Error", {}).get("Code")
-                    msg = e.response.get("Error", {}).get("Message")
-                    logger.warning(f"  ✗ Key '{s3_key}' failed: {code} - {msg}")
-                    if code not in ("404", "NoSuchKey", "NotFound"):
-                        # Non-404 error (auth, permissions, etc.)
-                        raise FileNotFoundError(
-                            f"Failed to download {fname} from DagsHub S3. "
-                            f"Bucket={bucket}, Endpoint={endpoint}, Key={s3_key}. "
-                            f"Error: {code} - {msg}"
-                        ) from e
-                    else:
-                        raise FileNotFoundError(
-                            f"Missing artifact {fname} in S3. "
-                            f"Tried key: '{s3_key}'. "
-                            f"Bucket: {bucket}, Endpoint: {endpoint}. "
-                            "The artifact may not have been pushed to DVC remote. "
-                            "Please run 'dvc push -r origin' locally or check if CI/CD completed successfully."
-                        ) from e
-                except Exception as e:
-                    logger.warning(f"  ✗ Key '{s3_key}' failed with unexpected error: {e}")
+                    
+                    try:
+                        # Quick existence check
+                        s3.head_object(Bucket=bucket, Key=s3_key)
+                        s3.download_file(bucket, s3_key, dest)
+                        logger.info(f"  ✓ Successfully downloaded {fname} using key: {s3_key}")
+                        success = True
+                        break
+                        
+                    except botocore.exceptions.ClientError as e:
+                        code = e.response.get("Error", {}).get("Code")
+                        msg = e.response.get("Error", {}).get("Message")
+                        if code in ("404", "NoSuchKey", "NotFound"):
+                            logger.info(f"  ✗ Key '{s3_key}' not found")
+                            continue
+                        else:
+                            # Non-404 error (auth, permissions, etc.)
+                            logger.warning(f"  ✗ Key '{s3_key}' failed: {code} - {msg}")
+                            raise FileNotFoundError(
+                                f"Failed to download {fname} from DagsHub S3. "
+                                f"Bucket={bucket}, Endpoint={endpoint}, Key={s3_key}. "
+                                f"Error: {code} - {msg}"
+                            ) from e
+                    except Exception as e:
+                        logger.warning(f"  ✗ Key '{s3_key}' failed with unexpected error: {e}")
+                        continue
+                
+                if not success:
+                    tried_keys_str = ', '.join([f"'{k}'" for k in tried_keys])
                     raise FileNotFoundError(
-                        f"Failed to download {fname} from DagsHub S3. "
-                        f"Bucket={bucket}, Endpoint={endpoint}, Key={s3_key}. "
-                        f"Unexpected error: {e}"
-                    ) from e
+                        f"Missing artifact {fname} in S3. "
+                        f"Tried keys: {tried_keys_str}. "
+                        f"Bucket: {bucket}, Endpoint: {endpoint}. "
+                        "The artifacts may not have been pushed to DVC remote. "
+                        "Please run 'dvc push -r origin' locally or check if CI/CD completed successfully."
+                    )
             # Re-check after S3 download
-            missing = [
+            missing_after_download = [
                 f for f in required
                 if not os.path.exists(os.path.join(ARTIFACTS_DIR, f))
             ]
-            if missing:
+            if missing_after_download:
                 raise FileNotFoundError(
-                    f"Missing artifacts after S3 download: {', '.join(missing)}. "
-                    "Verify artifacts exist in the DVC remote (dvc push)."
+                    f"Missing artifacts after S3 download: {', '.join(missing_after_download)}. "
+                    "Verify artifacts exist in the DVC remote (dvc push). "
+                    "Please run the CI/CD pipeline to generate and push artifacts, or train the model locally."
                 )
 
     ensure_artifacts()
