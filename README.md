@@ -1,6 +1,6 @@
 # Real-Time Hate Detection and Content Moderation
 
-A production-ready, end-to-end pipeline to detect hate speech and offensive language in short texts. It includes an ETL pipeline, Supabase data ingestion, robust preprocessing, model training and evaluation with MLflow logging,concept drift detection and handling, reproducible pipelines via DVC, a Streamlit demo app, Docker packaging, deployment in Hugging Face Spaces and automated CI/CD with GitHub Actions.
+A production-ready, end-to-end pipeline to detect hate speech and offensive language in short texts. It includes an ETL pipeline, Supabase data ingestion, robust preprocessing, model training and evaluation with MLflow logging,concept drift detection and handling, reproducible pipelines via DVC, a Streamlit demo app, Docker packaging, deployment in Hugging Face Spaces and automated CI/CD pipeline with GitHub Actions.
 
 ## Features
 - Supabase ingestion +  ETL
@@ -70,5 +70,5 @@ A production-ready, end-to-end pipeline to detect hate speech and offensive lang
 ## License
 For research and educational purposes. Ensure compliance with data and platform policies when deploying.
 
-## Author
+## Author 
 Sujato Dutta | [LinkedIn](https://www.linkedin.com/in/sujato-dutta/).
