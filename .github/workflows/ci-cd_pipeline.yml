@@ -226,6 +226,11 @@ jobs:
             rm -rf temp_space
           fi
           
+          # Set up Git LFS for binary files
+          git lfs install
+          git lfs track "*.joblib"
+          git add .gitattributes
+          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
