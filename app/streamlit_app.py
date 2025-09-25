@@ -24,15 +24,45 @@ MODEL_PATH = os.path.join(ARTIFACTS_DIR, "model.joblib")
 def load_artifacts():
     import subprocess
     import os
+    from pathlib import Path
 
     def ensure_artifacts():
+        # Ensure artifacts dir exists
+        os.makedirs(ARTIFACTS_DIR, exist_ok=True)
+
         # Map DAGSHUB_TOKEN to AWS_* if Space provided only DAGSHUB_TOKEN
         if not os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("DAGSHUB_TOKEN"):
             os.environ["AWS_ACCESS_KEY_ID"] = os.environ["DAGSHUB_TOKEN"]
         if not os.environ.get("AWS_SECRET_ACCESS_KEY") and os.environ.get("DAGSHUB_TOKEN"):
             os.environ["AWS_SECRET_ACCESS_KEY"] = os.environ["DAGSHUB_TOKEN"]
-        # Optional default region for S3 clients (safe default)
+        # Safe default region
         os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+
+        # Read endpointurl from .dvc/config and export so boto3 honors it
+        def _read_dvc_endpoint():
+            try:
+                cfg_path = Path(ROOT) / ".dvc" / "config"
+                with open(cfg_path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("endpointurl"):
+                            return line.split("=", 1)[1].strip()
+            except Exception:
+                return None
+        endpoint = _read_dvc_endpoint()
+        if endpoint:
+            os.environ.setdefault("AWS_ENDPOINT_URL_S3", endpoint)
+
+        # Configure DVC remote with runtime credentials (non-persistent in container)
+        aws_key = os.environ.get("AWS_ACCESS_KEY_ID")
+        aws_secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
+        if aws_key and aws_secret:
+            # Best-effort, ignore failures if already set
+            subprocess.run(["dvc", "remote", "modify", "origin", "access_key_id", aws_key], check=False)
+            subprocess.run(["dvc", "remote", "modify", "origin", "secret_access_key", aws_secret], check=False)
+            if endpoint:
+                subprocess.run(["dvc", "remote", "modify", "origin", "endpointurl", endpoint], check=False)
+            subprocess.run(["dvc", "remote", "modify", "origin", "region", os.environ.get("AWS_DEFAULT_REGION", "us-east-1")], check=False)
 
         required = [
             "model.joblib",
@@ -46,10 +76,9 @@ def load_artifacts():
         ]
         if missing:
             try:
-                # Try to pull once; relies on Space env vars
-                subprocess.run(["dvc", "pull", "-v"], check=True)
+                # Pull explicitly from the named remote
+                subprocess.run(["dvc", "pull", "-r", "origin", "-v"], check=True, env=os.environ.copy())
             except subprocess.CalledProcessError as e:
-                # Surface a clear message; logs will show the error
                 raise FileNotFoundError(
                     f"DVC pull failed. Missing artifacts: {', '.join(missing)}. "
                     "Ensure Space Secrets include AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "
