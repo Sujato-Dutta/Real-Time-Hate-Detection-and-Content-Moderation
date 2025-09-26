@@ -12,6 +12,8 @@ pinned: false
 
 A production-ready, end-to-end pipeline to detect hate speech and offensive language in short texts. It includes an ETL pipeline, Supabase data ingestion, robust preprocessing, model training and evaluation with MLflow logging,concept drift detection and handling, reproducible pipelines via DVC, a Streamlit demo app, Docker packaging, deployment in Hugging Face Spaces and automated CI/CD pipeline with GitHub Actions.
 
+## App Link : https://huggingface.co/spaces/Sujato02/REAL_TIME_HATE_DETECTION_AND_CONTENT_MODERATION
+
 ## Features
 - Supabase ingestion +  ETL
 - Cleaning, TF‑IDF vectorization, label encoding
